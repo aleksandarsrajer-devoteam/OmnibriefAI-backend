@@ -26,6 +26,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: development
     container_name: omnibrief-backend
     ports:
       - "5000:5000"

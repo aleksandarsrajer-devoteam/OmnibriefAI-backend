@@ -14,7 +14,15 @@ app.use(
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
 
-      if (origin === frontendUrl || origin === 'http://127.0.0.1:5173') {
+      const allowedOrigins = [
+        frontendUrl,
+        frontendUrl?.replace(/^http:/, 'https:'),
+        frontendUrl?.replace(/^https:/, 'http:'),
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+      ].filter(Boolean);
+
+      if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       } else {
         const msg = `CORS policy doesn't endorse ${origin}`;
