@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  firebase-emulator:
+    build:
+      context: .
+      dockerfile: Dockerfile.emulator
+    container_name: firebase-emulator
+    stop_signal: SIGINT
+    stop_grace_period: 30s
+    ports:
+      - "4000:4000" # Emulator UI
+      - "9099:9099" # Firebase Auth
+      - "9199:9199" # GCS Storage
+      - "127.0.0.1:8080:8080" # Map Firestore ONLY to localhost for host browser UI compatibility (locked from external hosts)
+    volumes:
+      - ./firebase-data:/app/firebase-data
+      - ./firebase.json:/app/firebase.json
+      - ./storage.rules:/app/storage.rules
+    # Starts emulators importing existing data and exporting on container exit
+    command: ["firebase", "emulators:start", "--import=/app/firebase-data/data", "--export-on-exit", "--project=sara-sandbox-interns"]
+    networks:
+      - app-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: omnibrief-backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    env_file:
+      - .env
+    environment:
+      # Clear GCP credentials in emulator mode to prevent Node SDK from failing on missing local creds file
+      - GOOGLE_APPLICATION_CREDENTIALS=
+      - NODE_ENV=development
+    depends_on:
+      - firebase-emulator
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

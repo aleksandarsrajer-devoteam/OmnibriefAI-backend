@@ -1,0 +1,119 @@
+import { Response } from 'express';
+import { AuthenticatedRequest } from '../middlewares/auth.middleware';
+import { FileService } from '../services/file.service';
+
+export class FileController {
+  private fileService: FileService;
+
+  constructor(fileService: FileService) {
+    this.fileService = fileService;
+  }
+
+  /**
+   * GET /api/files
+   * Retrieves all file documents associated with the authenticated user.
+   */
+  getUserFiles = async (req: AuthenticatedRequest, res: Response): Promise<Response> => {
+    try {
+      const userId = req.user?.uid;
+      if (!userId) {
+        return res.status(401).json({ error: 'Unauthorized: Missing user authentication context' });
+      }
+
+      const files = await this.fileService.getUserFiles(userId);
+      return res.status(200).json(files);
+    } catch (error) {
+      console.error('Controller Error in getUserFiles:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  };
+
+  /**
+   * POST /api/files/signed-url
+   * Initiates the upload flow by creating a pending db document and returning a GCS upload URL.
+   */
+  initiateUpload = async (req: AuthenticatedRequest, res: Response): Promise<Response> => {
+    try {
+      const userId = req.user?.uid;
+      if (!userId) {
+        return res.status(401).json({ error: 'Unauthorized: Missing user authentication context' });
+      }
+
+      const { fileName, fileType, contentType } = req.body;
+
+      // Request validation
+      if (!fileName || typeof fileName !== 'string' || fileName.trim() === '') {
+        return res.status(400).json({ error: 'Bad Request: Missing or invalid fileName' });
+      }
+
+      if (!fileType || (fileType !== 'pdf' && fileType !== 'video')) {
+        return res.status(400).json({ error: "Bad Request: fileType must be 'pdf' or 'video'" });
+      }
+
+      const result = await this.fileService.initiateUpload(
+        userId,
+        fileName.trim(),
+        fileType,
+        contentType
+      );
+      return res.status(201).json(result);
+    } catch (error) {
+      console.error('Controller Error in initiateUpload:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  };
+
+  /**
+   * POST /api/files/:id/complete
+   * Signals upload completion, shifting file status from pending to ready in the database.
+   */
+  completeUpload = async (req: AuthenticatedRequest, res: Response): Promise<Response> => {
+    try {
+      const userId = req.user?.uid;
+      if (!userId) {
+        return res.status(401).json({ error: 'Unauthorized: Missing user authentication context' });
+      }
+
+      const fileId = req.params.id;
+      if (!fileId) {
+        return res.status(400).json({ error: 'Bad Request: Missing file parameter ID' });
+      }
+
+      await this.fileService.completeUpload(userId, fileId);
+      return res.status(200).json({ message: 'Upload marked as complete' });
+    } catch (error: any) {
+      console.error('Controller Error in completeUpload:', error);
+      const status = error.statusCode || 500;
+      const message = error.statusCode ? error.message : 'Internal Server Error';
+      return res.status(status).json({ error: message });
+    }
+  };
+
+  /**
+   * GET /api/files/:id
+   * Retrieves specific file details and generates a temporary GET URL for display/streaming.
+   */
+  getFileForViewer = async (req: AuthenticatedRequest, res: Response): Promise<Response> => {
+    try {
+      const userId = req.user?.uid;
+      if (!userId) {
+        return res.status(401).json({ error: 'Unauthorized: Missing user authentication context' });
+      }
+
+      const fileId = req.params.id;
+      if (!fileId) {
+        return res.status(400).json({ error: 'Bad Request: Missing file parameter ID' });
+      }
+
+      const fileDetails = await this.fileService.getFileForViewer(userId, fileId);
+      return res.status(200).json(fileDetails);
+    } catch (error: any) {
+      console.error('Controller Error in getFileForViewer:', error);
+
+      const status = error.statusCode || 500;
+      const message = error.statusCode ? error.message : 'Internal Server Error';
+
+      return res.status(status).json({ error: message });
+    }
+  };
+}

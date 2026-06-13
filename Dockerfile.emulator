@@ -1,0 +1,19 @@
+FROM node:20-alpine
+
+# Install JRE 21 required by the latest firebase-tools
+RUN apk add --no-cache openjdk21-jre-headless bash
+
+# Install firebase-tools CLI globally
+RUN npm install -g firebase-tools
+
+WORKDIR /app
+
+# Expose Firebase Emulator ports:
+# - 9099: Firebase Auth
+# - 8080: Firestore (internal network access)
+# - 9199: GCS Cloud Storage
+# - 4000: Emulator UI
+EXPOSE 9099 8080 9199 4000
+
+# Start Firebase Emulators
+CMD ["firebase", "emulators:start", "--project=sara-sandbox-interns"]
