@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { fileRouter } from './routes/file.routes';
+import { notificationRouter } from './routes/notification.routes';
 
 dotenv.config();
 
@@ -40,6 +41,7 @@ app.use(express.json());
 
 // Register endpoints mapped under /api prefix
 app.use('/api', fileRouter);
+app.use('/api', notificationRouter);
 
 // Global unhandled error handler middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

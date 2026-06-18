@@ -1,6 +1,7 @@
-import { Response } from 'express';
+import { Response, Request } from 'express';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 import { FileService } from '../services/file.service';
+import { sseService } from '../services/sse.service';
 
 export class FileController {
   private fileService: FileService;
@@ -65,22 +66,30 @@ export class FileController {
 
   /**
    * POST /api/files/:id/complete
-   * Signals upload completion, shifting file status from pending to ready in the database.
+   * Called by the system (AI Worker) to signal task completion and save AI results.
+   * Shists status from processing to ready and broadcasts the updated metadata over SSE.
    */
-  completeUpload = async (req: AuthenticatedRequest, res: Response): Promise<Response> => {
+  completeUpload = async (req: Request, res: Response): Promise<Response> => {
     try {
-      const userId = req.user?.uid;
-      if (!userId) {
-        return res.status(401).json({ error: 'Unauthorized: Missing user authentication context' });
-      }
-
       const fileId = req.params.id;
+      const { userId, summary, transcription } = req.body;
+
       if (!fileId) {
         return res.status(400).json({ error: 'Bad Request: Missing file parameter ID' });
       }
+      if (!userId) {
+        return res.status(400).json({ error: 'Bad Request: Missing userId in request body' });
+      }
 
-      await this.fileService.completeUpload(userId, fileId);
-      return res.status(200).json({ message: 'Upload marked as complete' });
+      const fileDoc = await this.fileService.completeUpload(userId, fileId, {
+        summary,
+        transcription,
+      });
+
+      // Broadcast the completed file metadata via SSE (updates status to 'Ready' on UI)
+      sseService.sendToUser(userId, 'file-created', fileDoc);
+
+      return res.status(200).json({ message: 'Upload marked as complete', file: fileDoc });
     } catch (error: any) {
       console.error('Controller Error in completeUpload:', error);
       const status = error.statusCode || 500;
@@ -114,6 +123,30 @@ export class FileController {
       const message = error.statusCode ? error.message : 'Internal Server Error';
 
       return res.status(status).json({ error: message });
+    }
+  };
+
+  /**
+   * POST /api/files/create
+   * Called by the system (Cloud Workflows) when GCS upload is detected.
+   * Creates/updates the Firestore record and broadcasts a 'file-created' event via SSE.
+   */
+  createFileRecord = async (req: Request, res: Response): Promise<Response> => {
+    try {
+      const { bucket, storagePath } = req.body;
+      if (!bucket || !storagePath) {
+        return res.status(400).json({ error: 'Bad Request: Missing bucket or storagePath in payload' });
+      }
+
+      const fileDoc = await this.fileService.createOrUpdateFileRecord(bucket, storagePath);
+
+      // Broadcast file created event to the user
+      sseService.sendToUser(fileDoc.userId, 'file-created', fileDoc);
+
+      return res.status(200).json(fileDoc);
+    } catch (error: any) {
+      console.error('Controller Error in createFileRecord:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
     }
   };
 }

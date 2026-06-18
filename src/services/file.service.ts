@@ -66,9 +66,13 @@ export class FileService {
   }
 
   /**
-   * Confirms upload completion, shifting file status from pending to ready in the database.
+   * Confirms upload completion, saving the generated AI summary/transcription and shifting file status to ready.
    */
-  async completeUpload(userId: string, fileId: string): Promise<void> {
+  async completeUpload(
+    userId: string,
+    fileId: string,
+    results?: { summary?: string; transcription?: string }
+  ): Promise<FileDocument> {
     try {
       const file = await this.fileRepository.getFileById(fileId);
       if (!file) {
@@ -83,9 +87,72 @@ export class FileService {
         throw forbiddenError;
       }
 
-      await this.fileRepository.updateFileStatus(fileId, 'ready');
+      const extraData: Partial<FileDocument> = {};
+      if (results) {
+        if (results.summary) extraData.summary = results.summary;
+        if (results.transcription) extraData.transcription = results.transcription;
+      }
+
+      await this.fileRepository.updateFileStatus(fileId, 'ready', extraData);
+
+      const updatedFile = await this.fileRepository.getFileById(fileId);
+      if (!updatedFile) {
+        throw new Error(`Failed to retrieve file document after updating completion: ${fileId}`);
+      }
+      return updatedFile;
     } catch (error) {
       console.error(`Error in FileService.completeUpload for file ${fileId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Called by the Workflow to create or update the file record after upload.
+   */
+  async createOrUpdateFileRecord(bucket: string, storagePath: string): Promise<FileDocument> {
+    try {
+      // storagePath is like users/${userId}/${fileId}
+      const parts = storagePath.split('/');
+      if (parts.length < 3 || parts[0] !== 'users') {
+        throw new Error(`Invalid storage path format: ${storagePath}`);
+      }
+
+      const userId = parts[1];
+      const fileId = parts[2];
+
+      // Look up existing file
+      let file = await this.fileRepository.getFileById(fileId);
+
+      if (file) {
+        // If it exists, update status to processing
+        await this.fileRepository.updateFileStatus(fileId, 'processing', {
+          storagePath,
+        });
+        file = await this.fileRepository.getFileById(fileId);
+      } else {
+        // Fallback: create a new record if it wasn't pre-created
+        const fileName = fileId; // fallback display name
+        const fileType = fileName.toLowerCase().endsWith('.pdf') ? 'pdf' : 'video';
+
+        file = {
+          id: fileId,
+          userId,
+          fileName,
+          storagePath,
+          status: 'processing',
+          createdAt: new Date().toISOString(),
+          fileType,
+        };
+        await this.fileRepository.createFile(file);
+      }
+
+      if (!file) {
+        throw new Error(`Failed to retrieve file document after creation/update: ${fileId}`);
+      }
+
+      return file;
+    } catch (error) {
+      console.error(`Error in FileService.createOrUpdateFileRecord for path ${storagePath}:`, error);
       throw error;
     }
   }

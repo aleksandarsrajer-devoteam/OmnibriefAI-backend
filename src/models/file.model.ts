@@ -7,4 +7,6 @@ export interface FileDocument {
   createdAt: string; // ISO Date String
   updatedAt?: string; // ISO Date String
   fileType?: 'pdf' | 'video';
+  summary?: string;
+  transcription?: string;
 }
