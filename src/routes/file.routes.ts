@@ -22,6 +22,9 @@ fileRouter.post('/files/signed-url', authMiddleware as RequestHandler, fileContr
 // 3. POST /api/files/:id/complete -> Mark the file status as ready upon worker callback completion
 fileRouter.post('/files/:id/complete', systemAuthMiddleware as RequestHandler, fileController.completeUpload as RequestHandler);
 
+// POST /api/files/:id/processing -> Move the file status to processing called by workflow
+fileRouter.post('/files/:id/processing', systemAuthMiddleware as RequestHandler, fileController.startProcessing as RequestHandler);
+
 // 4. GET /api/files/:id -> Get file details and GET Signed URL for secure viewing
 fileRouter.get('/files/:id', authMiddleware as RequestHandler, fileController.getFileForViewer as RequestHandler);
 

@@ -67,12 +67,12 @@ export class FileController {
   /**
    * POST /api/files/:id/complete
    * Called by the system (AI Worker) to signal task completion and save AI results.
-   * Shists status from processing to ready and broadcasts the updated metadata over SSE.
+   * Shifts status to ready or failed and broadcasts the updated metadata over SSE.
    */
   completeUpload = async (req: Request, res: Response): Promise<Response> => {
     try {
       const fileId = req.params.id;
-      const { userId, summary, transcription } = req.body;
+      const { userId, status, summary, transcription } = req.body;
 
       if (!fileId) {
         return res.status(400).json({ error: 'Bad Request: Missing file parameter ID' });
@@ -81,17 +81,49 @@ export class FileController {
         return res.status(400).json({ error: 'Bad Request: Missing userId in request body' });
       }
 
-      const fileDoc = await this.fileService.completeUpload(userId, fileId, {
+      const targetStatus = status === 'failed' ? 'failed' : 'ready';
+
+      const fileDoc = await this.fileService.completeUpload(userId, fileId, targetStatus, {
         summary,
         transcription,
       });
 
-      // Broadcast the completed file metadata via SSE (updates status to 'Ready' on UI)
+      // Broadcast the completed file metadata via SSE (updates status on UI)
       sseService.sendToUser(userId, 'file-created', fileDoc);
 
-      return res.status(200).json({ message: 'Upload marked as complete', file: fileDoc });
+      return res.status(200).json({ message: `Upload marked as ${targetStatus}`, file: fileDoc });
     } catch (error: any) {
       console.error('Controller Error in completeUpload:', error);
+      const status = error.statusCode || 500;
+      const message = error.statusCode ? error.message : 'Internal Server Error';
+      return res.status(status).json({ error: message });
+    }
+  };
+
+  /**
+   * POST /api/files/:id/processing
+   * Called by the Workflow to transition status to processing.
+   */
+  startProcessing = async (req: Request, res: Response): Promise<Response> => {
+    try {
+      const fileId = req.params.id;
+      const { userId } = req.body;
+
+      if (!fileId) {
+        return res.status(400).json({ error: 'Bad Request: Missing file parameter ID' });
+      }
+      if (!userId) {
+        return res.status(400).json({ error: 'Bad Request: Missing userId in request body' });
+      }
+
+      const fileDoc = await this.fileService.startProcessing(userId, fileId);
+
+      // Broadcast the processing file metadata via SSE
+      sseService.sendToUser(userId, 'file-created', fileDoc);
+
+      return res.status(200).json({ message: 'File status updated to processing', file: fileDoc });
+    } catch (error: any) {
+      console.error('Controller Error in startProcessing:', error);
       const status = error.statusCode || 500;
       const message = error.statusCode ? error.message : 'Internal Server Error';
       return res.status(status).json({ error: message });

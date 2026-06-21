@@ -71,6 +71,7 @@ export class FileService {
   async completeUpload(
     userId: string,
     fileId: string,
+    status: 'ready' | 'failed',
     results?: { summary?: string; transcription?: string }
   ): Promise<FileDocument> {
     try {
@@ -93,7 +94,7 @@ export class FileService {
         if (results.transcription) extraData.transcription = results.transcription;
       }
 
-      await this.fileRepository.updateFileStatus(fileId, 'ready', extraData);
+      await this.fileRepository.updateFileStatus(fileId, status, extraData);
 
       const updatedFile = await this.fileRepository.getFileById(fileId);
       if (!updatedFile) {
@@ -102,6 +103,37 @@ export class FileService {
       return updatedFile;
     } catch (error) {
       console.error(`Error in FileService.completeUpload for file ${fileId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Shifts status from pending to processing.
+   */
+  async startProcessing(userId: string, fileId: string): Promise<FileDocument> {
+    try {
+      const file = await this.fileRepository.getFileById(fileId);
+      if (!file) {
+        const notFoundError = new Error('File not found');
+        (notFoundError as any).statusCode = 404;
+        throw notFoundError;
+      }
+
+      if (file.userId !== userId) {
+        const forbiddenError = new Error('Forbidden: You do not own this file');
+        (forbiddenError as any).statusCode = 403;
+        throw forbiddenError;
+      }
+
+      await this.fileRepository.updateFileStatus(fileId, 'processing');
+
+      const updatedFile = await this.fileRepository.getFileById(fileId);
+      if (!updatedFile) {
+        throw new Error(`Failed to retrieve file document after updating processing: ${fileId}`);
+      }
+      return updatedFile;
+    } catch (error) {
+      console.error(`Error in FileService.startProcessing for file ${fileId}:`, error);
       throw error;
     }
   }
